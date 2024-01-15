@@ -1,38 +1,400 @@
 # utils.py
 
+# Data Handling and Transformation Functions:
+    # read_file: For reading and loading data files.
+    # filter_dataframe: For filtering DataFrame based on certain criteria.
+    # split_frame: To split data into different frames for easier handling.
+    # paginate_df: To manage large datasets by implementing pagination.
+# Data Processing Functions:
+    # load_volcano_data: Specific to loading data for volcano plots.
+    # process_data: Generic data processing function.
+# Plotting Functions:These functions are more about data visualization and less about UI/interaction logic.
+    # create_bokeh_plot: For creating Bokeh plots.
+    # create_corrmap: For generating correlation maps.
+# Literature Handling Functions:These functions deal with processing and retrieving literature data, which is a backend operation.
+    # fetch_literature: For fetching literature data.
+    # filter_sentences: For filtering sentences in the literature.
+    # get_full_text_deprecated: Older version of getting full text.
+    # get_full_text: Current version of getting full text.
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
 from scipy import stats
 from scipy.cluster.hierarchy import linkage, fcluster
 from scipy.spatial.distance import squareform
-from goatools import obo_parser
-from goatools.semantic import TermCounts, resnik_sim
+import streamlit as st
+import re
+import requests
+from bs4 import BeautifulSoup
+from Bio import Entrez
+import time
+from datetime import datetime, timedelta
+from Bio import Medline
+from st_aggrid import AgGrid, GridOptionsBuilder
+from pubmed_lookup import PubMedLookup, Publication
+from pyvis.network import Network
+from stvis import pv_static
+import base64
+import io
+from pandas.api.types import (
+    is_categorical_dtype,
+    is_datetime64_any_dtype,
+    is_numeric_dtype,
+    is_object_dtype,
+)
+from bokeh.plotting import figure
+#from bokeh.models import ColumnDataSource, HoverTool, CrosshairTool
+from bokeh.models import ColumnDataSource, OpenURL, TapTool, HoverTool, CrosshairTool, WheelZoomTool
+import dash_bio as dashbio
 
-def load_data(file):
-    """Load data from a file."""
-    return pd.read_csv(file)
+
+
+##############################################
+# Data Handling and Transformation Functions:#
+##############################################
+
+#background image for the app
+def add_bg_from_local(image_file):
+    with open(image_file, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read())
+    st.markdown(
+    f"""
+    <style>
+    .stApp {{
+        background-image: url(data:image/{"png"};base64,{encoded_string.decode()});
+        background-size: cover;
+        
+
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+    )
+
+@st.cache_data(show_spinner=True)
+def read_file(uploaded_file):
+    buffer = io.BytesIO(uploaded_file.getvalue())
+
+    if uploaded_file.name.endswith('.csv'):
+        return pd.read_csv(buffer)
+    elif uploaded_file.name.endswith('.tsv'):
+        return pd.read_csv(buffer, sep='\t')
 
 # Add spacing if this column is shorter
 def add_spacer(num):
     for _ in range(num):
         st.write("")
 
-#def filter_low_counts(data, cutoff):
-#    """Filter out low count genes."""
-#    return data.loc[:, (data > cutoff).all(axis=0)]
+# Implementation of the filter_dataframe function to enable search filtering with multiselect and text input widgets.
+def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds a UI on top of a dataframe to let viewers filter columns
 
-#def normalize_data(data):
-#    """Normalize the data."""
-#    return data / data.sum()
+    Args:
+        df (pd.DataFrame): Original dataframe
 
-#def log_transform(data):
-#    """Apply log transformation to the data."""
-#    return np.log2(data + 1)
+    Returns:
+        pd.DataFrame: Filtered dataframe
+    """
+    modify = st.checkbox("Add filters")
 
-#def load_go_terms(go_obo_path):
-#    """Load GO terms from the OBO file."""
-#    return obo_parser.GODag(go_obo_path)
+    if not modify:
+        return df
+
+    df = df.copy()
+
+    # Try to convert datetimes into a standard format (datetime, no timezone)
+    for col in df.columns:
+        if is_object_dtype(df[col]):
+            try:
+                df[col] = pd.to_datetime(df[col])
+            except Exception:
+                pass
+
+        if is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
+
+    modification_container = st.container()
+
+    with modification_container:
+        to_filter_columns = st.multiselect("Filter dataframe on", df.columns, key="Filter Dataframe")
+        for column in to_filter_columns:
+            left, right = st.columns((1, 20))
+            left.write("↳")
+            # Treat columns with < 10 unique values as categorical
+            if is_categorical_dtype(df[column]) or df[column].nunique() < 10:
+                user_cat_input = right.multiselect(
+                    f"Values for {column}",
+                    df[column].unique(),
+                    default=list(df[column].unique()),
+                )
+                df = df[df[column].isin(user_cat_input)]
+            elif is_numeric_dtype(df[column]):
+                _min = float(df[column].min())
+                _max = float(df[column].max())
+                step = (_max - _min) / 100
+                user_num_input = right.slider(
+                    f"Values for {column}",
+                    _min,
+                    _max,
+                    (_min, _max),
+                    step=step,
+                )
+                df = df[df[column].between(*user_num_input)]
+            elif is_datetime64_any_dtype(df[column]):
+                user_date_input = right.date_input(
+                    f"Values for {column}",
+                    value=(
+                        df[column].min(),
+                        df[column].max(),
+                    ),
+                )
+                if len(user_date_input) == 2:
+                    user_date_input = tuple(map(pd.to_datetime, user_date_input))
+                    start_date, end_date = user_date_input
+                    df = df.loc[df[column].between(start_date, end_date)]
+            else:
+                user_text_input = right.text_input(
+                    f"Substring or regex in {column}",
+                )
+                if user_text_input:
+                    df = df[df[column].str.contains(user_text_input)]
+
+    return df
+
+#Pagination module
+#@st.cache_data(show_spinner=False) <-- not sure wether I should use it here
+def split_frame(input_df, rows):
+    df = [input_df.loc[i : i + rows - 1, :] for i in range(0, len(input_df), rows)]
+    return df
+
+def paginate_df(dataset):
+    top_menu = st.columns(3)
+    with top_menu[0]:
+        sort = st.radio("Sort Data", options=["Yes", "No"], horizontal=1, index=1)
+    if sort == "Yes":
+        with top_menu[1]:
+            sort_field = st.selectbox("Sort By", options=dataset.columns)
+        with top_menu[2]:
+            sort_direction = st.radio(
+                "Direction", options=["⬆️", "⬇️"], horizontal=True
+            )
+        dataset = dataset.sort_values(
+            by=sort_field, ascending=sort_direction == "⬆️", ignore_index=True
+        )
+    pagination = st.container()
+
+    bottom_menu = st.columns((4, 1, 1))
+    with bottom_menu[2]:
+        batch_size = st.selectbox("Page Size", options=[25, 50, 100])
+    with bottom_menu[1]:
+        total_pages = (
+            int(len(dataset) / batch_size) if int(len(dataset) / batch_size) > 0 else 1
+        )
+        current_page = st.number_input(
+            "Page", min_value=1, max_value=total_pages, step=1, key="Pagination"
+        )
+    with bottom_menu[0]:
+        st.markdown(f"Page **{current_page}** of **{total_pages}** ")
+
+    pages = split_frame(dataset, batch_size)
+    pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
+
+
+#############################
+# Data Processing Functions:#
+#############################
+
+# Cached function for loading data
+@st.cache_data
+def load_volcano_data(url):
+    return pd.read_csv(url)
+
+# Function to process data
+def process_data(df, x_axis, y_axis, cutoff, record_dict):
+
+    # Calculate fold change
+    #df['fold_change'] = df.apply(lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else np.inf, axis=1)
+    df['fold_change'] = df.apply(
+        lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else float('inf') if row[x_axis] > 0 else float('-inf'),
+        axis=1
+    )
+    # Filter for significant genes based on cutoff
+    significant_genes = df[(abs(df['fold_change']) > cutoff) & (df[x_axis] + df[y_axis] > 10)]
+
+    if not significant_genes.empty:
+        significant_genes.loc[:, 'x_values'] = significant_genes[x_axis]
+        significant_genes.loc[:, 'y_values'] = significant_genes[y_axis]
+        significant_genes.loc[:, 'seq'] = significant_genes['GeneID'].apply(
+            lambda id: str(record_dict[id].seq) if id in record_dict else 'N/A'
+        )
+    return significant_genes
+
+
+############################################################################################################
+# Plotting Functions:These functions are more about data visualization and less about UI/interaction logic.#
+############################################################################################################
+
+# Create Bokeh plot
+def create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation):
+    significant_genes['x_values'] = significant_genes[x_axis]
+    significant_genes['y_values'] = significant_genes[y_axis]
+    significant_genes['color'] = 'blue'
+    
+    if gene_annotation:
+        significant_genes.loc[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False), 'color'] = 'red'
+
+    source = ColumnDataSource(significant_genes)
+    
+    p = figure(title=f"{x_axis} vs {y_axis}", tools="pan,box_zoom,wheel_zoom,reset,save,tap")
+    p.toolbar.active_scroll = p.select_one(WheelZoomTool)
+    p.xaxis.axis_label = x_axis
+    p.yaxis.axis_label = y_axis
+    p.yaxis.axis_label_text_font_size = '14pt'
+    p.xaxis.axis_label_text_font_size = '14pt'
+    p.yaxis.major_label_text_font_size = '12pt'
+    p.xaxis.major_label_text_font_size = '12pt'
+    p.title.text_font_size = '16pt'
+    p.circle('x_values', 'y_values', source=source, size=7, color='color', line_color=None)
+
+    # Add tools to the plot
+    url = "http://papers.genomics.lbl.gov/cgi-bin/litSearch.cgi?query=@seq&Search=Search"
+    taptool = p.select(type=TapTool)
+    taptool.callback = OpenURL(url=url)
+    hover = HoverTool(tooltips=[("GeneID", "@GeneID"), ("Fold Change", "@fold_change"), ("Annotation", "@Annotation")])
+    p.add_tools(hover)
+    p.add_tools(CrosshairTool())
+
+    return p
+
+# Function to create the correlation Clustergram
+def create_corrmap(df, cols, colorscale):
+    # Ensure DataFrame is numeric and compute correlation matrix
+    df_numeric = df[cols].select_dtypes(include=[np.number]) 
+    df_corr = df_numeric.corr() # Compute correlation matrix
+
+    # Simplified Clustergram call
+    try:
+        fig = dashbio.Clustergram(
+            data=df_corr.values,
+            column_labels=df_corr.columns.tolist(),
+            row_labels=df_corr.index.tolist(),
+            color_map=colorscale
+        
+        )
+
+        # Layout Enhancements
+        fig.update_layout(
+            title_text='Correlation Matrix Clustergram',
+            title_x=0.5,
+            margin=dict(l=40, r=40, t=40, b=40),
+            height=400,
+            width=600
+        )
+    except ValueError as e:
+        # Print error for debugging
+        print("Error creating Clustergram:", e)
+        print("Data shape:", df_corr.values.shape)
+        print("Column labels:", df_corr.columns.tolist())
+        print("Row labels:", df_corr.index.tolist())
+        raise
+
+    except Exception as e:
+        st.error(f"Error creating clustergram: {e}")
+        return None
+
+
+
+    return fig
+
+
+###################################################################################################################################
+# Literature Handling Functions:These functions deal with processing and retrieving literature data, which is a backend operation.#
+###################################################################################################################################
+
+def fetch_literature(gene_name):
+    url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={gene_name}&format=json&resultType=core"
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    summaries = []
+    response = requests.get(url)
+    if response.status_code == 200:
+        articles = response.json().get('resultList', {}).get('result', [])
+        #print(articles)
+
+        # Initialize T5 model for summarization
+        model_name = "t5-small"
+        tokenizer = T5Tokenizer.from_pretrained(model_name)
+        model = T5ForConditionalGeneration.from_pretrained(model_name)
+
+        for i, article in enumerate(articles[:10]):  # Limit to first 10 articles
+            print(article.get('id'))
+            progress_bar.progress((i+1)/10)
+            status_text.text(f"Processing article {i+1}/10")
+
+            try:
+                full_text = get_full_text(article.get('id'))
+                print(full_text)
+                if full_text:
+                    # Ensure the gene name is included in the summary
+                    relevant_sentences = filter_sentences(full_text, gene_name)
+                    relevant_text = " ".join(relevant_sentences)
+                    # Summarize the filtered text
+                    inputs = tokenizer.encode("summarize: " + relevant_sentences, return_tensors="pt", max_length=512, truncation=True)
+                    summary_ids = model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
+                    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+                    summaries.append((article.get('title', 'No Title'), summary))
+                else:
+                    summaries.append((article.get('title', 'No Title'), "Full text not available."))
+            except Exception as e:
+                summaries.append((article.get('title', 'No Title'), f"Error processing full text: {e}"))
+
+        progress_bar.empty()
+        status_text.empty()
+
+    else:
+        st.error("Failed to fetch data from Europe PMC")
+
+    return summaries
+
+def filter_sentences(text, gene_name):
+    sentences = text.split('.')
+    return [sentence.strip() + '.' for sentence in sentences if gene_name.lower() in sentence.lower()]
+
+def get_full_text_deprecated(article_id):
+    # Function to retrieve the full text of an article
+    full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
+    response = requests.get(full_text_url)
+    if response.status_code == 200:
+        return response.text  # Or parse XML to extract relevant sections
+    return None
+
+def get_full_text(article_id):
+    full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
+
+    try:
+        response = requests.get(full_text_url)
+        if response.status_code == 200:
+            # Parse the XML response
+            tree = ET.fromstring(response.content)
+            # Extract the full text from the XML
+            # Note: This depends on the structure of the XML response
+            # You may need to adjust the following line to match the actual XML structure
+            full_text = tree.find('.//fullText').text
+            return full_text
+        else:
+            print(f"Failed to fetch full text for article ID {article_id}: HTTP {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Error occurred while fetching full text for article ID {article_id}: {e}")
+        return None
+
+
+
+
 
 
 
@@ -41,12 +403,6 @@ def add_spacer(num):
 ################################
 ####Scholar Scraper functions###
 ################################
-import streamlit as st
-import re
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-
 
 # this function for the getting inforamtion of the web page
 def get_paperinfo(paper_url, headers):
@@ -76,7 +432,7 @@ def get_tags(doc):
 
     return paper_tag,cite_tag,link_tag,author_tag
 
-    # it will return the title of the paper
+# it will return the title of the paper
 def get_papertitle(paper_tag):
     
     paper_names = []
@@ -149,13 +505,6 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 #Pubmed literature search
-import streamlit as st
-from Bio import Entrez
-import pandas as pd
-import time
-from datetime import datetime, timedelta
-
-
 def fetch_pubmed_abstracts(query, max_results=20):
     # Set your email here
     Entrez.email = "your.email@example.com"
@@ -208,14 +557,6 @@ def fetch_pubmed_abstracts(query, max_results=20):
         time.sleep(20)
 
     return abstracts
-
-
-from Bio import Medline
-import streamlit as st
-import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder
-from pubmed_lookup import PubMedLookup, Publication
-
 
 def display_results_in_aggrid(pubmed_results):
     # NCBI will contact user by email if excessive queries are detected
@@ -316,11 +657,6 @@ def display_results_in_aggrid(pubmed_results):
                 #st.subheader("Abstract:")
                 #st.components.v1.html(f'<iframe src="{row["Paper URL"]}" width=800 height=600></iframe>', height=600)
 
-
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-
 # Assuming you have 'fetch_pubmed_abstracts' and 'display_results_in_aggrid' functions defined
 
 # Calculate the journal distribution
@@ -332,17 +668,6 @@ def calculate_journal_distribution(pubmed_results):
             journal = record.get("JT", "No journal available")
             journal_counts[journal] = journal_counts.get(journal, 0) + 1
     return journal_counts
-
-
-
-
-
-
-
-from pyvis.network import Network
-from Bio import Medline
-import streamlit as st
-from stvis import pv_static
 
 def create_authors_network(pubmed_results):
     if not pubmed_results:  # Check if pubmed_results is empty or None
@@ -377,13 +702,6 @@ def create_authors_network(pubmed_results):
 
     return nt
 
-
-#from streamlit_echarts import st_pyecharts
-#from pyecharts import options as opts
-#from pyecharts.charts import Bar
-#import matplotlib.pyplot as plt
-import pandas as pd
-import plotly.express as px
 # Calculate publication counts for each author
 def calculate_author_publication_counts(pubmed_results):
     author_counts = {}

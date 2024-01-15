@@ -1,8 +1,19 @@
 # main_app.py
 
+#UI and Interaction Functions:
+    # show_file_upload: Manages the UI for file upload.
+    # show_missing_data: Displays missing data information in the UI.
+    # show_data_preprocessing: Handles the UI for data preprocessing.
+    # show_volcano_plot: Specifically for displaying the volcano plot in the UI.
+    # show_literature_search, show_googlescholar_results, show_europepmc_results, show_pubmed_results: Manage the UI for literature search and results display.
+    # generate_report_ui, feedback_ui: Handle UI elements for report generation and feedback.
+# Core Functionalities:
+    # main: The main function to run the app, which orchestrates the flow and interactions.
+
 # Import necessary modules
 import streamlit as st
 from utils import add_spacer, fetch_pubmed_abstracts, display_results_in_aggrid, calculate_journal_distribution, calculate_author_publication_counts,create_authors_network
+from utils import read_file, filter_dataframe, paginate_df, load_volcano_data, process_data, create_bokeh_plot, create_corrmap
 import tempfile
 from st_aggrid import AgGrid
 import pandas as pd
@@ -10,42 +21,37 @@ from faker import Faker
 import random
 import io
 from stvis import pv_static
-from bokeh.models import WheelZoomTool
 import plotly.graph_objects as go
 import numpy as np
-import dash_bio as dashbio
 from scipy.cluster import hierarchy as sch
 from scipy.spatial.distance import pdist
+#Literature search module, modified version of the code from https://github.com/nainiayoub/scholar-scrap:
+import requests
+import urllib
+from bs4 import BeautifulSoup
+import re
+import time
+from time import sleep
+from utils import get_paperinfo, get_tags, get_papertitle, get_citecount, get_link, get_author_year_publi_info, cite_number, convert_df
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from xml.etree import ElementTree as ET
+from pandas.api.types import (
+    is_categorical_dtype,
+    is_datetime64_any_dtype,
+    is_numeric_dtype,
+    is_object_dtype,
+)
+import missingno as msno
+import matplotlib.pyplot as plt
+import plotly.express as px
+# ... other imports ...
+import dash_bio as dashbio
+from streamlit_plotly_events import plotly_events
+from Bio import SeqIO
+import os
+
+
 # Define UI functions for each section of the app
-
-#background image for the app
-import base64
-def add_bg_from_local(image_file):
-    with open(image_file, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read())
-    st.markdown(
-    f"""
-    <style>
-    .stApp {{
-        background-image: url(data:image/{"png"};base64,{encoded_string.decode()});
-        background-size: cover;
-        
-
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-    )
-
-@st.cache_data(show_spinner=True)
-def read_file(uploaded_file):
-    buffer = io.BytesIO(uploaded_file.getvalue())
-
-    if uploaded_file.name.endswith('.csv'):
-        return pd.read_csv(buffer)
-    elif uploaded_file.name.endswith('.tsv'):
-        return pd.read_csv(buffer, sep='\t')
-
     
 def show_file_upload():
     uploaded_file = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'], key="Data Upload")
@@ -58,7 +64,9 @@ def show_file_upload():
         # Display the DataFrame using AgGrid
         #AgGrid(df)
         #st.dataframe(df)
-        st.write("Data overview:")
+        n, m = df.shape
+        st.write("Data preview:")
+        st.write(f'<p style="font-size:100%">Dataset contains {n} rows and {m} columns.</p>', unsafe_allow_html=True)
         st.write(df.head())
         st.success("File uploaded and displayed successfully!")
     
@@ -71,140 +79,6 @@ def show_file_upload():
         st.write(uploaded_file.head())
         st.success("File uploaded and displayed successfully!")
 
-
-
-# Add similar functions for other sections like show_data_preprocessing() and show_go_terms_visualization()
-# ... [Continue with other UI functions] ...
-######################################################################################################################
-import pandas as pd
-import streamlit as st
-from pandas.api.types import (
-    is_categorical_dtype,
-    is_datetime64_any_dtype,
-    is_numeric_dtype,
-    is_object_dtype,
-)
-
-# ... [Your existing imports and code] ...
-
-# Implementation of the filter_dataframe function to enable search filtering with multiselect and text input widgets.
-def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds a UI on top of a dataframe to let viewers filter columns
-
-    Args:
-        df (pd.DataFrame): Original dataframe
-
-    Returns:
-        pd.DataFrame: Filtered dataframe
-    """
-    modify = st.checkbox("Add filters")
-
-    if not modify:
-        return df
-
-    df = df.copy()
-
-    # Try to convert datetimes into a standard format (datetime, no timezone)
-    for col in df.columns:
-        if is_object_dtype(df[col]):
-            try:
-                df[col] = pd.to_datetime(df[col])
-            except Exception:
-                pass
-
-        if is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].dt.tz_localize(None)
-
-    modification_container = st.container()
-
-    with modification_container:
-        to_filter_columns = st.multiselect("Filter dataframe on", df.columns, key="Filter Dataframe")
-        for column in to_filter_columns:
-            left, right = st.columns((1, 20))
-            left.write("↳")
-            # Treat columns with < 10 unique values as categorical
-            if is_categorical_dtype(df[column]) or df[column].nunique() < 10:
-                user_cat_input = right.multiselect(
-                    f"Values for {column}",
-                    df[column].unique(),
-                    default=list(df[column].unique()),
-                )
-                df = df[df[column].isin(user_cat_input)]
-            elif is_numeric_dtype(df[column]):
-                _min = float(df[column].min())
-                _max = float(df[column].max())
-                step = (_max - _min) / 100
-                user_num_input = right.slider(
-                    f"Values for {column}",
-                    _min,
-                    _max,
-                    (_min, _max),
-                    step=step,
-                )
-                df = df[df[column].between(*user_num_input)]
-            elif is_datetime64_any_dtype(df[column]):
-                user_date_input = right.date_input(
-                    f"Values for {column}",
-                    value=(
-                        df[column].min(),
-                        df[column].max(),
-                    ),
-                )
-                if len(user_date_input) == 2:
-                    user_date_input = tuple(map(pd.to_datetime, user_date_input))
-                    start_date, end_date = user_date_input
-                    df = df.loc[df[column].between(start_date, end_date)]
-            else:
-                user_text_input = right.text_input(
-                    f"Substring or regex in {column}",
-                )
-                if user_text_input:
-                    df = df[df[column].str.contains(user_text_input)]
-
-    return df
-
-#Pagination module
-#@st.cache_data(show_spinner=False) <-- not sure wether I should use it here
-def split_frame(input_df, rows):
-    df = [input_df.loc[i : i + rows - 1, :] for i in range(0, len(input_df), rows)]
-    return df
-
-def paginate_df(dataset):
-    top_menu = st.columns(3)
-    with top_menu[0]:
-        sort = st.radio("Sort Data", options=["Yes", "No"], horizontal=1, index=1)
-    if sort == "Yes":
-        with top_menu[1]:
-            sort_field = st.selectbox("Sort By", options=dataset.columns)
-        with top_menu[2]:
-            sort_direction = st.radio(
-                "Direction", options=["⬆️", "⬇️"], horizontal=True
-            )
-        dataset = dataset.sort_values(
-            by=sort_field, ascending=sort_direction == "⬆️", ignore_index=True
-        )
-    pagination = st.container()
-
-    bottom_menu = st.columns((4, 1, 1))
-    with bottom_menu[2]:
-        batch_size = st.selectbox("Page Size", options=[25, 50, 100])
-    with bottom_menu[1]:
-        total_pages = (
-            int(len(dataset) / batch_size) if int(len(dataset) / batch_size) > 0 else 1
-        )
-        current_page = st.number_input(
-            "Page", min_value=1, max_value=total_pages, step=1
-        )
-    with bottom_menu[0]:
-        st.markdown(f"Page **{current_page}** of **{total_pages}** ")
-
-    pages = split_frame(dataset, batch_size)
-    pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
-
-
-import missingno as msno
-import matplotlib.pyplot as plt
 
 def show_missing_data():
     if 'uploaded_data' in st.session_state and not st.session_state['uploaded_data'].empty:
@@ -221,7 +95,6 @@ def show_missing_data():
         st.pyplot(fig)
 
 
-import plotly.express as px
 def show_data_preprocessing():
     """Displays the UI elements for data preprocessing using filter_dataframe."""
     st.subheader("Data Preprocessing")
@@ -411,26 +284,6 @@ def show_data_preprocessing():
         st.write("Please upload a file in the Data Upload section.")
 
 
-
-import dash_bio as dashbio
-from streamlit_plotly_events import plotly_events
-import streamlit as st
-from Bio import SeqIO
-import pandas as pd
-from bokeh.plotting import figure
-#from bokeh.models import ColumnDataSource, HoverTool, CrosshairTool
-from bokeh.models import ColumnDataSource, OpenURL, TapTool, HoverTool, CrosshairTool
-import os
-import numpy as np
-from st_aggrid import AgGrid
-import plotly.graph_objects as go
-
-
-# Cached function for loading data
-@st.cache_data
-def load_volcano_data(url):
-    return pd.read_csv(url)
-
 def show_volcano_plot():
     #st.title('Enhanced Volcano Plot Visualization with Streamlit and Dash')
 
@@ -612,29 +465,7 @@ def show_volcano_plot():
         cut_off = st.sidebar.slider('|fold change| > :', 0.0, 10.0, 2.0)
         gene_annotation = st.sidebar.text_input("Gene annotation contains:")
 
-        # Function to process data
-        def process_data(df, x_axis, y_axis, cutoff):
-            # Calculate fold change
-            #df['fold_change'] = df.apply(lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else np.inf, axis=1)
-
-            # Filter for significant genes based on cutoff
-            #significant_genes = df[np.abs(df['fold_change']) > cutoff]
-
-            #return significant_genes
-
-            df['fold_change'] = df.apply(
-                lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else float('inf') if row[x_axis] > 0 else float('-inf'),
-                axis=1
-            )
-            significant_genes = df[(abs(df['fold_change']) > cutoff) & (df[x_axis] + df[y_axis] > 10)]
-
-            if not significant_genes.empty:
-                significant_genes.loc[:, 'x_values'] = significant_genes[x_axis]
-                significant_genes.loc[:, 'y_values'] = significant_genes[y_axis]
-                significant_genes.loc[:, 'seq'] = significant_genes['GeneID'].apply(
-                    lambda id: str(record_dict[id].seq) if id in record_dict else 'N/A'
-                )
-            return significant_genes
+        
 
 
 
@@ -642,39 +473,9 @@ def show_volcano_plot():
 
 
         # Process the data
-        significant_genes = process_data(df, x_axis, y_axis, cut_off)
+        significant_genes = process_data(df, x_axis, y_axis, cut_off, record_dict)
 
-        # Create Bokeh plot
-        def create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation):
-            significant_genes['x_values'] = significant_genes[x_axis]
-            significant_genes['y_values'] = significant_genes[y_axis]
-            significant_genes['color'] = 'blue'
-            
-            if gene_annotation:
-                significant_genes.loc[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False), 'color'] = 'red'
-
-            source = ColumnDataSource(significant_genes)
-            
-            p = figure(title=f"{x_axis} vs {y_axis}", tools="pan,box_zoom,wheel_zoom,reset,save,tap")
-            p.toolbar.active_scroll = p.select_one(WheelZoomTool)
-            p.xaxis.axis_label = x_axis
-            p.yaxis.axis_label = y_axis
-            p.yaxis.axis_label_text_font_size = '14pt'
-            p.xaxis.axis_label_text_font_size = '14pt'
-            p.yaxis.major_label_text_font_size = '12pt'
-            p.xaxis.major_label_text_font_size = '12pt'
-            p.title.text_font_size = '16pt'
-            p.circle('x_values', 'y_values', source=source, size=7, color='color', line_color=None)
-
-            # Add tools to the plot
-            url = "http://papers.genomics.lbl.gov/cgi-bin/litSearch.cgi?query=@seq&Search=Search"
-            taptool = p.select(type=TapTool)
-            taptool.callback = OpenURL(url=url)
-            hover = HoverTool(tooltips=[("GeneID", "@GeneID"), ("Fold Change", "@fold_change"), ("Annotation", "@Annotation")])
-            p.add_tools(hover)
-            p.add_tools(CrosshairTool())
-
-            return p
+        
 
         #plot = create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation)
 
@@ -711,47 +512,7 @@ def show_volcano_plot():
             st.warning("No data to display.")
 
     with tab3:
-        # Function to create the correlation Clustergram
-        def create_corrmap(df, cols, colorscale):
-            # Ensure DataFrame is numeric and compute correlation matrix
-            df_numeric = df[cols].select_dtypes(include=[np.number]) 
-            df_corr = df_numeric.corr() # Compute correlation matrix
-
-            # Simplified Clustergram call
-            try:
-                fig = dashbio.Clustergram(
-                    data=df_corr.values,
-                    column_labels=df_corr.columns.tolist(),
-                    row_labels=df_corr.index.tolist(),
-                    color_map=colorscale
-                
-                )
-
-                # Layout Enhancements
-                fig.update_layout(
-                    title_text='Correlation Matrix Clustergram',
-                    title_x=0.5,
-                    margin=dict(l=40, r=40, t=40, b=40),
-                    height=400,
-                    width=600
-                )
-            except ValueError as e:
-                # Print error for debugging
-                print("Error creating Clustergram:", e)
-                print("Data shape:", df_corr.values.shape)
-                print("Column labels:", df_corr.columns.tolist())
-                print("Row labels:", df_corr.index.tolist())
-                raise
-
-            except Exception as e:
-                st.error(f"Error creating clustergram: {e}")
-                return None
-
-
-
-            return fig
-
-                # Upload CSV/TSV file widget
+        # Upload CSV/TSV file widget
         uploaded_file = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'])
 
         if uploaded_file is not None:
@@ -782,13 +543,6 @@ def show_volcano_plot():
             st.write("Awaiting CSV/TSV file to be uploaded.")
 
 
-
-# Note: The actual implementation of the function will require the existing Streamlit (st) context and the helper functions from the utils.py file.
-# The provided code is a conceptual representation of the required modifications.
-
-
-
-
 def show_literature_search():
     st.subheader("Literature Search")
 
@@ -811,20 +565,6 @@ def show_literature_search():
         st.subheader("Pubmed Summarizer")
         show_pubmed_results()
 
-
-
-
-#Literature search module, modified version of the code from https://github.com/nainiayoub/scholar-scrap:
-import streamlit as st
-import requests
-import urllib
-from bs4 import BeautifulSoup
-import pandas as pd
-import re
-import time
-from time import sleep
-from utils import get_paperinfo, get_tags, get_papertitle, get_citecount, get_link, get_author_year_publi_info, cite_number, convert_df
-# ... other imports ...
 
 def show_googlescholar_results(default_search_term):
     # Code from the provided script
@@ -969,96 +709,7 @@ def show_googlescholar_results(default_search_term):
     # Make sure to return any data or results that need to be displayed or used elsewhere
 
 
-import streamlit as st
-import requests
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-import requests
-from xml.etree import ElementTree as ET
-
-# Streamlit app
 def show_europepmc_results():
-
-    def fetch_literature(drug_name):
-        url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={drug_name}&format=json&resultType=core"
-
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        summaries = []
-        response = requests.get(url)
-        if response.status_code == 200:
-            articles = response.json().get('resultList', {}).get('result', [])
-            #print(articles)
-
-            # Initialize T5 model for summarization
-            model_name = "t5-small"
-            tokenizer = T5Tokenizer.from_pretrained(model_name)
-            model = T5ForConditionalGeneration.from_pretrained(model_name)
-
-            for i, article in enumerate(articles[:10]):  # Limit to first 10 articles
-                print(article.get('id'))
-                progress_bar.progress((i+1)/10)
-                status_text.text(f"Processing article {i+1}/10")
-
-                try:
-                    full_text = get_full_text(article.get('id'))
-                    print(full_text)
-                    if full_text:
-                        # Ensure the drug name is included in the summary
-                        relevant_sentences = filter_sentences(full_text, drug_name)
-                        relevant_text = " ".join(relevant_sentences)
-                        # Summarize the filtered text
-                        inputs = tokenizer.encode("summarize: " + relevant_sentences, return_tensors="pt", max_length=512, truncation=True)
-                        summary_ids = model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
-                        summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-                        summaries.append((article.get('title', 'No Title'), summary))
-                    else:
-                        summaries.append((article.get('title', 'No Title'), "Full text not available."))
-                except Exception as e:
-                    summaries.append((article.get('title', 'No Title'), f"Error processing full text: {e}"))
-
-            progress_bar.empty()
-            status_text.empty()
-
-        else:
-            st.error("Failed to fetch data from Europe PMC")
-
-        return summaries
-
-    def filter_sentences(text, drug_name):
-        sentences = text.split('.')
-        return [sentence.strip() + '.' for sentence in sentences if drug_name.lower() in sentence.lower()]
-
-    def get_full_text_old(article_id):
-        # Function to retrieve the full text of an article
-        full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
-        response = requests.get(full_text_url)
-        if response.status_code == 200:
-            return response.text  # Or parse XML to extract relevant sections
-        return None
-    
-
-
-    def get_full_text(article_id):
-        full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
-
-        try:
-            response = requests.get(full_text_url)
-            if response.status_code == 200:
-                # Parse the XML response
-                tree = ET.fromstring(response.content)
-                # Extract the full text from the XML
-                # Note: This depends on the structure of the XML response
-                # You may need to adjust the following line to match the actual XML structure
-                full_text = tree.find('.//fullText').text
-                return full_text
-            else:
-                print(f"Failed to fetch full text for article ID {article_id}: HTTP {response.status_code}")
-                return None
-        except Exception as e:
-            print(f"Error occurred while fetching full text for article ID {article_id}: {e}")
-            return None
-
 
     def display_results(literature):
         st.write("Search Results:")
@@ -1067,14 +718,14 @@ def show_europepmc_results():
             st.write(summary)
             st.write("---")
     
-    #st.title("Drug Literature Full-Text Summarizer")
+    #st.title("Gene Literature Full-Text Summarizer")
 
     # User input
-    drug_name = st.text_input("Enter the name of the drug:")
+    gene_name = st.text_input("Enter the name of the gene:")
 
-    if st.button("Search") and drug_name:
+    if st.button("Search") and gene_name:
         # Fetch literature from Europe PMC
-        literature = fetch_literature(drug_name)
+        literature = fetch_literature(gene_name)
         # Display results
         display_results(literature)
 
@@ -1164,8 +815,6 @@ def show_pubmed_results():
                 st.plotly_chart(fig)
 
 
-# ... [Add other functions and the main function as previously described] ...
-
 def generate_report_ui(processed_data):
     """Displays the UI elements for report generation."""
     st.subheader("Report Generation")
@@ -1176,6 +825,7 @@ def generate_report_ui(processed_data):
         # Example: Display processed data or any other analysis result
         st.write(processed_data.head())
 
+
 def feedback_ui():
     """Displays the UI elements for user feedback."""
     st.subheader("Feedback")
@@ -1184,31 +834,13 @@ def feedback_ui():
         # Placeholder for feedback handling logic
         st.success("Thank you for your feedback!")
 
-# ... [Continue with the main function implementation] ...
-
-#import time
-#import requests
-
-#import streamlit as st
-#from streamlit_lottie import st_lottie_spinner
-#
-#def load_lottieurl(url: str):
-#    r = requests.get(url)
-#    if r.status_code != 200:
-#        return None
-#    return r.json()
-
-#lottie_url_old = "https://assets5.lottiefiles.com/packages/lf20_V9t630.json"
-#lottie_url ="https://assets1.lottiefiles.com/packages/lf20_vykpwt8b.json"
-#lottie_json = load_lottieurl(lottie_url)
-
-
 
 # main_app.py (Main function implementation)
-
 def main():
+
     #set background
     #add_bg_from_local('image.png')
+
     # Sidebar navigation
     st.sidebar.title("Navigation")
 
@@ -1217,7 +849,7 @@ def main():
     selected_section = st.sidebar.radio("Go to", sections, key='nav')
 
    # Initialize variables to store uploaded data
-    raw_counts_data = metadata_data = processed_data = None
+    processed_data = None
 
     # Display the appropriate section
     if selected_section == "Data Upload":
@@ -1229,10 +861,7 @@ def main():
 
         ---
         ''')
-
     #**Credit:** App built by [Alexander Yemelin](https://www.linkedin.com/in/alexander-yemelin/)
-
-
         show_file_upload()
     elif selected_section == "Data Preprocessing":
         show_data_preprocessing()
@@ -1255,16 +884,6 @@ if __name__ == "__main__":
         layout="wide",
         #im = Image.open("favicon.ico"), page_icon=":chart_with_upwards_trend:",
     )
-
-#prevent leaving the website by asking, later to implement
-#    st.markdown("""
-#    <script>
-#        window.addEventListener('beforeunload', function (e) {
-#            e.preventDefault();
-#            e.returnValue = '';
-#        });
-#    </script>
-#    """, unsafe_allow_html=True)
     
     with st.spinner('Calculating...'):
     #with st_lottie_spinner(lottie_json,height=400, width=400):
@@ -1277,7 +896,6 @@ if __name__ == "__main__":
 
 
     with st.sidebar:
-        
         #from streamlit_lottie import st_lottie
         #st_lottie("https://assets5.lottiefiles.com/packages/lf20_V9t630.json", key="hello")
         st.markdown("---")
@@ -1290,7 +908,6 @@ if __name__ == "__main__":
             unsafe_allow_html=True,
         )
         st.markdown("---")
-
         #st.info('Credit: Created by [Alexander Yemelin](https://www.linkedin.com/in/alexander-yemelin/)')
         st.caption('''Every exciting data science journey starts with a dataset. Please upload a CSV file. Once we have the data in hand, we'll dive into understanding it and have some fun exploring it.''')
 
