@@ -17,6 +17,12 @@
     # get_full_text_deprecated: Older version of getting full text.
     # get_full_text: Current version of getting full text.
 
+from __future__ import absolute_import
+import numpy as np
+import pandas as pd
+from pandas.api.types import is_numeric_dtype
+import plotly.graph_objects as go
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -37,6 +43,8 @@ from pyvis.network import Network
 from stvis import pv_static
 import base64
 import io
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from xml.etree import ElementTree as ET
 from pandas.api.types import (
     is_categorical_dtype,
     is_datetime64_any_dtype,
@@ -47,6 +55,22 @@ from bokeh.plotting import figure
 #from bokeh.models import ColumnDataSource, HoverTool, CrosshairTool
 from bokeh.models import ColumnDataSource, OpenURL, TapTool, HoverTool, CrosshairTool, WheelZoomTool
 import dash_bio as dashbio
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+import jinja2
+import pdfkit
+import base64
+from io import BytesIO
+
+from PIL import Image
+from datetime import datetime
+import pytz
+# Import Bokeh export functions
+from bokeh.io.export import get_screenshot_as_png
+
+
 
 
 
@@ -160,8 +184,9 @@ def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 )
                 if user_text_input:
                     df = df[df[column].str.contains(user_text_input)]
+    st.session_state["processed_df"] = df.reset_index(drop=True)
 
-    return df
+    return df.reset_index(drop=True)
 
 #Pagination module
 #@st.cache_data(show_spinner=False) <-- not sure wether I should use it here
@@ -269,10 +294,12 @@ def create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation):
     return p
 
 # Function to create the correlation Clustergram
-def create_corrmap(df, cols, colorscale):
+def create_corrmap(df, cols, colorscale, correlation_method):
     # Ensure DataFrame is numeric and compute correlation matrix
     df_numeric = df[cols].select_dtypes(include=[np.number]) 
-    df_corr = df_numeric.corr() # Compute correlation matrix
+    #df_corr = df_numeric.corr() # Compute correlation matrix
+    df_corr = df_numeric.corr(method=correlation_method)
+    #st.dataframe(df_corr.values)
 
     # Simplified Clustergram call
     try:
@@ -280,7 +307,8 @@ def create_corrmap(df, cols, colorscale):
             data=df_corr.values,
             column_labels=df_corr.columns.tolist(),
             row_labels=df_corr.index.tolist(),
-            color_map=colorscale
+            color_map=colorscale,
+            center_values=False,
         
         )
 
@@ -288,7 +316,7 @@ def create_corrmap(df, cols, colorscale):
         fig.update_layout(
             title_text='Correlation Matrix Clustergram',
             title_x=0.5,
-            margin=dict(l=40, r=40, t=40, b=40),
+            margin=dict(l=70, r=70, t=70, b=70),
             height=400,
             width=600
         )
@@ -309,10 +337,83 @@ def create_corrmap(df, cols, colorscale):
     return fig
 
 
+
+def create_corrmap_deprecated(df, cols, colorscale):
+    # Ensure DataFrame is numeric and compute correlation matrix
+    df_numeric = df[cols].select_dtypes(include=[np.number])
+    df_corr = df_numeric.corr()  # Compute correlation matrix
+
+        # Initialize session state variables
+    if 'cluster_method' not in st.session_state:
+        st.session_state.cluster_method = "all"
+    if 'row_dist_method' not in st.session_state:
+        st.session_state.row_dist_method = "euclidean"
+    if 'col_dist_method' not in st.session_state:
+        st.session_state.col_dist_method = "euclidean"
+    if 'linkage_method' not in st.session_state:
+        st.session_state.linkage_method = "complete"
+
+    def update_cluster_method():
+        st.session_state.cluster_method = cluster_method
+
+    def update_row_dist_method():
+        st.session_state.row_dist_method = row_dist_method
+
+    def update_col_dist_method():
+        st.session_state.col_dist_method = col_dist_method
+
+    def update_linkage_method():
+        st.session_state.linkage_method = linkage_method
+
+    # Add selectors with session state in the sidebar
+    with st.sidebar:
+        cluster_method = st.selectbox("Select Cluster Method", ["all", "row", "column"],
+                                    index=0, on_change=update_cluster_method)
+        row_dist_method = st.selectbox("Select Row Distance Metric", ["euclidean", "minkowski", "cityblock"],
+                                    index=0, on_change=update_row_dist_method)
+        col_dist_method = st.selectbox("Select Column Distance Metric", ["euclidean", "minkowski", "cityblock"],
+                                    index=0, on_change=update_col_dist_method)
+        linkage_method = st.selectbox("Select Linkage Method", ["complete", "single", "average", "ward"],
+                                    index=0, on_change=update_linkage_method)
+
+
+
+    # Create the Clustergram
+    try:
+        fig = dashbio.Clustergram(
+            data=df_corr.values,
+            column_labels=df_corr.columns.tolist(),
+            row_labels=df_corr.index.tolist(),
+            color_map=colorscale,
+            cluster=st.session_state.cluster_method,
+            row_dist=st.session_state.row_dist_method,
+            col_dist=st.session_state.col_dist_method,
+            link_method=st.session_state.linkage_method
+        )
+
+        # Layout Enhancements
+        fig.update_layout(
+            title_text='Correlation Matrix Clustergram',
+            title_x=0.5,
+            margin=dict(l=40, r=40, t=40, b=40),
+            height=400,
+            width=600
+        )
+    except ValueError as e:
+        print("Error creating Clustergram:", e)
+        raise
+    except Exception as e:
+        st.error(f"Error creating clustergram: {e}")
+        return None
+
+    return fig
+
+
+
 ###################################################################################################################################
 # Literature Handling Functions:These functions deal with processing and retrieving literature data, which is a backend operation.#
 ###################################################################################################################################
-
+@st.cache_data
 def fetch_literature(gene_name):
     url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={gene_name}&format=json&resultType=core"
 
@@ -330,20 +431,23 @@ def fetch_literature(gene_name):
         tokenizer = T5Tokenizer.from_pretrained(model_name)
         model = T5ForConditionalGeneration.from_pretrained(model_name)
 
-        for i, article in enumerate(articles[:10]):  # Limit to first 10 articles
-            print(article.get('id'))
-            progress_bar.progress((i+1)/10)
-            status_text.text(f"Processing article {i+1}/10")
+        for i, article in enumerate(articles[:3]):  # Limit to first 3 articles
+            #print(article.get('pmcid'))
+            progress_bar.progress((i+1)/3)
+            status_text.text(f"Processing article {i+1}/3")
 
             try:
-                full_text = get_full_text(article.get('id'))
-                print(full_text)
+                article_ID = article.get('pmcid')
+                #print(article_ID)
+                #full_text = get_full_text(article_ID)
+                full_text = article.get("abstractText")
+                #print(full_text)
                 if full_text:
                     # Ensure the gene name is included in the summary
                     relevant_sentences = filter_sentences(full_text, gene_name)
                     relevant_text = " ".join(relevant_sentences)
                     # Summarize the filtered text
-                    inputs = tokenizer.encode("summarize: " + relevant_sentences, return_tensors="pt", max_length=512, truncation=True)
+                    inputs = tokenizer.encode("summarize: " + relevant_text, return_tensors="pt", max_length=512, truncation=True)
                     summary_ids = model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
                     summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
                     summaries.append((article.get('title', 'No Title'), summary))
@@ -364,7 +468,7 @@ def filter_sentences(text, gene_name):
     sentences = text.split('.')
     return [sentence.strip() + '.' for sentence in sentences if gene_name.lower() in sentence.lower()]
 
-def get_full_text_deprecated(article_id):
+def get_full_text1(article_id):
     # Function to retrieve the full text of an article
     full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
     response = requests.get(full_text_url)
@@ -374,6 +478,7 @@ def get_full_text_deprecated(article_id):
 
 def get_full_text(article_id):
     full_text_url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/{article_id}/fullTextXML"
+    #print(full_text_url)
 
     try:
         response = requests.get(full_text_url)
@@ -384,6 +489,7 @@ def get_full_text(article_id):
             # Note: This depends on the structure of the XML response
             # You may need to adjust the following line to match the actual XML structure
             full_text = tree.find('.//fullText').text
+            #print(full_text)
             return full_text
         else:
             print(f"Failed to fetch full text for article ID {article_id}: HTTP {response.status_code}")
@@ -391,13 +497,6 @@ def get_full_text(article_id):
     except Exception as e:
         print(f"Error occurred while fetching full text for article ID {article_id}: {e}")
         return None
-
-
-
-
-
-
-
 
 
 ################################
@@ -505,6 +604,7 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 #Pubmed literature search
+@st.cache_data
 def fetch_pubmed_abstracts(query, max_results=20):
     # Set your email here
     Entrez.email = "your.email@example.com"
@@ -558,6 +658,7 @@ def fetch_pubmed_abstracts(query, max_results=20):
 
     return abstracts
 
+#@st.cache_data
 def display_results_in_aggrid(pubmed_results):
     # NCBI will contact user by email if excessive queries are detected
     email = ''
@@ -713,3 +814,75 @@ def calculate_author_publication_counts(pubmed_results):
                 author_counts[author] = author_counts.get(author, 0) + 1
     return author_counts
 
+# Function to create the Plotly Volcano plot
+@st.cache_resource
+def create_plotly_volcano_plot(df, sel_col_P, sel_col_FC, sel_col_ann, sel_col_id, gene_annotation, p_value_filter, fold_change_filter):
+    # Data preparation
+    df['color'] = 'blue'  # Default color for all genes
+    df['-log10(p-value)'] = -np.log10(df[sel_col_P])
+
+    # Coloring significant genes
+    significant_filter = (df[sel_col_P] <= p_value_filter) & (abs(df[sel_col_FC]) >= fold_change_filter)
+    df.loc[significant_filter, 'color'] = 'red'
+
+    # Coloring genes matching the annotation
+    if gene_annotation:
+        annotation_filter = df[sel_col_ann].str.contains(gene_annotation, case=False, na=False)
+        df.loc[annotation_filter, 'color'] = 'yellow'
+
+    # Create Plotly figure
+    fig = go.Figure()
+
+
+    # Use go.Scatter instead of go.Scattergl
+    fig.add_trace(go.Scattergl(
+        x=df[sel_col_FC], 
+        y=df['-log10(p-value)'],
+        mode='markers',
+        customdata=df[sel_col_id],  # Add geneID as custom data
+        marker=dict(color=df['color'], size=7),
+        hovertemplate="<b>%{customdata}</b><br>%{text}<br>Fold Change: %{x}<br>-log10(p-value): %{y}<extra></extra>",  # Custom hover template
+        text=df[sel_col_ann]  # Data shown on hover
+    ))
+
+    # Update layout
+    fig.update_layout(
+        title='Volcano Plot',
+        xaxis_title='Fold Change',
+        yaxis_title='-log10(p-value)',
+        hovermode='closest',
+    )
+
+        # Add annotations for a custom legend
+    annotations = [
+        dict(xref='paper', yref='paper', x=0.95, y=0.95, xanchor='left', yanchor='top',
+             text='Default Genes', showarrow=False, font=dict(size=12, color='blue')),
+        dict(xref='paper', yref='paper', x=0.95, y=0.85, xanchor='left', yanchor='top',
+             text='Significant Genes', showarrow=False, font=dict(size=12, color='red')),
+        dict(xref='paper', yref='paper', x=0.95, y=0.75, xanchor='left', yanchor='top',
+             text='Annotation', showarrow=False, font=dict(size=12, color='yellow')),
+        # Add more annotations as needed
+    ]
+
+    fig.update_layout(annotations=annotations)
+
+    #fig.update_layout({"uirevision": "foo"}, overwrite=True) 
+    fig.update_layout(uirevision=True)
+
+
+    return fig
+
+# Function to convert plots for Report generation
+def plot_to_bytes(fig, graph_module="pyplot", format="png"):
+    buf = BytesIO()
+    if graph_module == "pyplot":
+        fig.savefig(buf, format = format, bbox_inches="tight", dpi=300)
+    elif graph_module == 'plotly':
+        fig.write_image(file = buf, format = format, scale=3)
+    elif graph_module == 'bokeh':
+        # Bokeh handling
+        get_screenshot_as_png(fig, driver=None, timeout=5, resources="cdn").save(buf, format=format)
+
+    
+    data = base64.b64encode(buf.getbuffer()).decode("ascii")
+    return data
