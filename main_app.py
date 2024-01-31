@@ -11,6 +11,7 @@
     # main: The main function to run the app, which orchestrates the flow and interactions.
 
 # Import necessary modules
+import warnings
 import streamlit as st
 from utils import add_spacer, fetch_pubmed_abstracts, display_results_in_aggrid, calculate_journal_distribution, calculate_author_publication_counts,create_authors_network
 from utils import read_file, filter_dataframe, paginate_df, process_data, create_bokeh_plot, create_corrmap, fetch_literature, plot_to_bytes
@@ -66,8 +67,9 @@ from datetime import datetime
 import pytz
 # Import Bokeh export functions
 from bokeh.io.export import get_screenshot_as_png
+import json
 
-
+warnings.filterwarnings("ignore")
 # Define UI functions for each section of the app
     
 def show_file_upload():
@@ -522,7 +524,26 @@ def show_data_analysis():
                 st.markdown(f"Page **{current_page}** of **{total_pages}** ")
 
             pages = split_frame(dataset, batch_size)
-            pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
+            #pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
+            # Ensure current_page is within the valid range
+            #if 1 <= current_page <= len(pages):
+            #    pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
+            #else:
+                # Handle the case where current_page is out of range
+                # For example, display a message
+            #    st.warning("Nothing found!")
+            try:
+                # Attempt to display the page. current_page is assumed to be defined.
+                pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
+            except IndexError:
+                # This block is executed if an IndexError occurs in the try block.
+                st.error("No data available to display.")
+                # You can choose to display an empty DataFrame, a message, or revert to a default page.
+                # For example, showing the first page as a fallback:
+                #if len(pages) > 0:
+                #    pagination.dataframe(data=pages[0], use_container_width=True)  # Show first page
+                #else:
+                #    st.write("No data available to display.")
 
 
 
@@ -565,7 +586,7 @@ def show_data_analysis():
             col1, col2 = st.columns([0.5,0.5])
 
             with col1.container(border=None):
-                plot = create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation)
+                plot = create_bokeh_plot(df,significant_genes, x_axis, y_axis, gene_annotation)
                 st.session_state["scatter_plot"] = plot
                 
                 st.bokeh_chart(plot, use_container_width=True)
@@ -576,7 +597,7 @@ def show_data_analysis():
 
                 # Display the filtered data using Ag-Grid
                 # Enhanced display using HTML
-                st.markdown("<h4 style='color: navy; text-align: center;'>Filtered Genes based on 'Annotation Contains':</h4>", unsafe_allow_html=True)
+                st.markdown("<h4 style='color: navy; text-align: center;'>List of filtered genes:</h4>", unsafe_allow_html=True)
                 paginate_filtered_data(filtered_data)
                 #AgGrid(filtered_data)
         else:
@@ -866,13 +887,25 @@ def show_pubmed_results():
             # Render the Plotly figure
             st.plotly_chart(fig)
 
+        # with tab3:
+        #     # Authors Network
+        #     if st.session_state.pubmed_results:
+        #         #st.subheader("Authors Network")
+        #         authors_network = create_authors_network(st.session_state.pubmed_results)
+        #         if authors_network:
+        #             pv_static(authors_network)
+
         with tab3:
             # Authors Network
-            if st.session_state.pubmed_results:
-                #st.subheader("Authors Network")
+            # Add a checkbox to enable/disable network calculation
+            is_active = st.checkbox('Enable Authors Network Calculation', value=False)
+
+            if is_active and st.session_state.pubmed_results:
                 authors_network = create_authors_network(st.session_state.pubmed_results)
                 if authors_network:
                     pv_static(authors_network)
+            else:
+                st.write("Authors Network Calculation is disabled.")
 
         with tab4:
             # Calculate author publication counts
@@ -1107,6 +1140,7 @@ if __name__ == "__main__":
     with st.spinner('Calculating...'):
     #with st_lottie_spinner(lottie_json,height=400, width=400):
         #time.sleep(1)
+        st.title("Streamlit RNA-Seq Analyzer")
         main()
         #st.balloons()
     #from streamlit_lottie import st_lottie
@@ -1116,7 +1150,10 @@ if __name__ == "__main__":
 
     with st.sidebar:
         #from streamlit_lottie import st_lottie
-        st_lottie("https://assets5.lottiefiles.com/packages/lf20_V9t630.json", key="hello")
+        #st_lottie("https://assets5.lottiefiles.com/packages/lf20_V9t630.json", key="hello")
+        with open("./accessory_files/animation.json", "r",errors='ignore') as f:
+            animation = json.load(f)
+        st_lottie(animation)
         st.markdown("---")
         st.markdown(
             '<h6>Made in &nbsp<img src="https://streamlit.io/images/brand/streamlit-mark-color.png" alt="Streamlit logo" height="16">&nbsp by <a href="https://github.com/Alexyem1">@Alexyem1</a></h6>',

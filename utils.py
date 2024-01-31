@@ -69,6 +69,7 @@ from datetime import datetime
 import pytz
 # Import Bokeh export functions
 from bokeh.io.export import get_screenshot_as_png
+from bs4 import BeautifulSoup
 
 
 
@@ -241,10 +242,34 @@ def process_data(df, x_axis, y_axis, cutoff, record_dict):
 
     # Calculate fold change
     #df['fold_change'] = df.apply(lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else np.inf, axis=1)
-    df['fold_change'] = df.apply(
-        lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else float('inf') if row[x_axis] > 0 else float('-inf'),
-        axis=1
-    )
+    #df['fold_change'] = df.apply(
+        #lambda row: (row[x_axis] / row[y_axis]) if row[y_axis] != 0 else float('inf') if row[x_axis] > 0 else float('-inf'),
+        #axis=1
+    #)
+    def calculate_fold_change(row, x_axis, y_axis):
+        if row[y_axis] == 0:
+            # Handle the case when y_axis is zero
+            if row[x_axis] > 0:
+                return float('inf')
+            elif row[x_axis] < 0:
+                return float('-inf')
+            else:
+                return np.nan  # Handling the case when both x_axis and y_axis are zero
+        else:
+            # Handle the case when y_axis is not zero
+            if row[x_axis] == 0:
+                # If x_axis is zero, return a specific value (e.g., 0 or np.nan)
+                return 0  # or np.nan, depending on how you wish to represent this scenario
+            elif row[x_axis] >= row[y_axis]:
+                return row[x_axis] / row[y_axis]
+            else:
+                return -1 / (row[x_axis] / row[y_axis])
+
+    # Use the function in DataFrame.apply()
+    df['fold_change'] = df.apply(lambda row: calculate_fold_change(row, x_axis, y_axis), axis=1)
+
+
+
     # Filter for significant genes based on cutoff
     significant_genes = df[(abs(df['fold_change']) > cutoff) & (df[x_axis] + df[y_axis] > 10)]
 
@@ -262,17 +287,34 @@ def process_data(df, x_axis, y_axis, cutoff, record_dict):
 ############################################################################################################
 
 # Create Bokeh plot
-def create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation):
+def create_bokeh_plot(df,significant_genes, x_axis, y_axis, gene_annotation):
+    df = df.copy()
+    df['x_values'] = df[x_axis]
+    df['y_values'] = df[y_axis]
+    df['color'] = 'blue'
+
+
     significant_genes['x_values'] = significant_genes[x_axis]
     significant_genes['y_values'] = significant_genes[y_axis]
-    significant_genes['color'] = 'blue'
+    significant_genes['color'] = 'red'
     
     if gene_annotation:
-        significant_genes.loc[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False), 'color'] = 'red'
+        significant_genes.loc[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False), 'color'] = 'yellow'
+        df.loc[df['Annotation'].str.contains(gene_annotation, case=False, na=False), 'color'] = 'yellow'
 
     source = ColumnDataSource(significant_genes)
+    source_df = ColumnDataSource(df)
     
     p = figure(title=f"{x_axis} vs {y_axis}", tools="pan,box_zoom,wheel_zoom,reset,save,tap")
+
+ 
+    #p.circle(x_axis, y_axis,source=df, color="blue", alpha=1.0, muted_alpha=0.1, legend='all genes', size=7, 
+             #line_color="black"
+    #         )
+    p.circle(x_axis, y_axis,source=source_df, color="color", alpha=1.0, muted_alpha=0.1, legend='all genes', size=7, line_color=None
+            #line_color="black"
+            )
+
     p.toolbar.active_scroll = p.select_one(WheelZoomTool)
     p.xaxis.axis_label = x_axis
     p.yaxis.axis_label = y_axis
@@ -281,7 +323,10 @@ def create_bokeh_plot(significant_genes, x_axis, y_axis, gene_annotation):
     p.yaxis.major_label_text_font_size = '12pt'
     p.xaxis.major_label_text_font_size = '12pt'
     p.title.text_font_size = '16pt'
-    p.circle('x_values', 'y_values', source=source, size=7, color='color', line_color=None)
+    p.circle('x_values', 'y_values', source=source, size=7, color='color', legend='sig. genes', line_color=None)
+
+
+
 
     # Add tools to the plot
     url = "http://papers.genomics.lbl.gov/cgi-bin/litSearch.cgi?query=@seq&Search=Search"
@@ -725,36 +770,93 @@ def display_results_in_aggrid(pubmed_results):
         for row in selected_rows:
             #st.write(row)
             # Check if a publication is selected
+            # if 'Paper ID' in row:
+            #     lookup = PubMedLookup(row["Paper ID"], email)
+            #     publication = Publication(lookup)    # Use 'resolve_doi=False' to keep DOI URL
+
+            #     soup = BeautifulSoup(publication.abstract, "html.parser")
+            #     plain_text = soup.get_text()
+            #     print(plain_text)
+            #     c = st.container(border=True)
+            #     c.write(
+            #         """
+            #         TITLE:\n{title}\n
+            #         AUTHORS:{authors}\n
+            #         JOURNAL:{journal}\n
+            #         YEAR:{year}\n
+            #         MONTH:{month}\n
+            #         DAY:{day}\n
+            #         URL:{url}\n
+            #         PUBMED:{pubmed}\n
+            #         CITATION:{citation}\n
+            #         MINICITATION:{mini_citation}\n
+            #         """
+            #         .format(**{
+            #             'title': publication.title,
+            #             'authors': publication.authors,
+            #             'journal': publication.journal,
+            #             'year': publication.year,
+            #             'month': publication.month,
+            #             'day': publication.day,
+            #             'url': publication.url,
+            #             'pubmed': publication.pubmed_url,
+            #             'citation': publication.cite(),
+            #             'mini_citation': publication.cite_mini()
+            #             #'abstract': repr(publication.abstract),
+            #         }))
+            #     st.write("Abstract: " + plain_text)
+
+
+
             if 'Paper ID' in row:
                 lookup = PubMedLookup(row["Paper ID"], email)
-                publication = Publication(lookup)    # Use 'resolve_doi=False' to keep DOI URL
-                st.write(
-                    """
-                    TITLE:{title}\n
-                    AUTHORS:{authors}\n
-                    JOURNAL:{journal}\n
-                    YEAR:{year}\n
-                    MONTH:{month}\n
-                    DAY:{day}\n
-                    URL:{url}\n
-                    PUBMED:{pubmed}\n
-                    CITATION:{citation}\n
-                    MINICITATION:{mini_citation}\n
-                    ABSTRACT:\n{abstract}\n
-                    """
-                    .format(**{
-                        'title': publication.title,
-                        'authors': publication.authors,
-                        'journal': publication.journal,
-                        'year': publication.year,
-                        'month': publication.month,
-                        'day': publication.day,
-                        'url': publication.url,
-                        'pubmed': publication.pubmed_url,
-                        'citation': publication.cite(),
-                        'mini_citation': publication.cite_mini(),
-                        'abstract': repr(publication.abstract),
-                    }))
+                publication = Publication(lookup)  # Use 'resolve_doi=False' to keep DOI URL
+
+                soup = BeautifulSoup(publication.abstract, "html.parser")
+                plain_text = soup.get_text()
+                
+                # Define CSS styles
+                styles = """
+                <style>
+                    .publication-info {
+                        font-family: Arial, sans-serif;
+                        margin-bottom: 20px;
+                    }
+                    .publication-title {
+                        font-weight: bold;
+                        font-size: 20px;
+                        color: #d66e13;
+                    }
+                    .publication-header {
+                        font-weight: bold;
+                    }
+                </style>
+                """
+
+                # Structured publication information
+                publication_info = f"""
+                {styles}
+                <div class="publication-info">
+                    <div class="publication-title">{publication.title}</div>
+                    <div><span class="publication-header">Authors:</span> {publication.authors}</div>
+                    <div><span class="publication-header">Journal:</span> {publication.journal}</div>
+                    <div><span class="publication-header">Published:</span> {publication.year}, {publication.month} {publication.day}</div>
+                    <div><span class="publication-header">URL:</span> <a href="{publication.url}" target="_blank">{publication.url}</a></div>
+                    <div><span class="publication-header">PubMed:</span> <a href="{publication.pubmed_url}" target="_blank">{publication.pubmed_url}</a></div>
+                    <div><span class="publication-header">Citation:</span> {publication.cite()}</div>
+                    <div><span class="publication-header">Mini-Citation:</span> {publication.cite_mini()}</div>
+                </div>
+                """
+
+                # Use markdown to render the styled publication information
+                st.markdown(publication_info, unsafe_allow_html=True)
+
+                # Display abstract with an expander
+                with st.expander("**Abstract:**"):
+                    st.write(plain_text)
+
+
+
                 #st.subheader("Abstract:")
                 #st.components.v1.html(f'<iframe src="{row["Paper URL"]}" width=800 height=600></iframe>', height=600)
 
@@ -770,6 +872,7 @@ def calculate_journal_distribution(pubmed_results):
             journal_counts[journal] = journal_counts.get(journal, 0) + 1
     return journal_counts
 
+@st.cache_resource
 def create_authors_network(pubmed_results):
     if not pubmed_results:  # Check if pubmed_results is empty or None
         return None
@@ -802,6 +905,7 @@ def create_authors_network(pubmed_results):
                         nt.add_edge(author1, author2)
 
     return nt
+
 
 # Calculate publication counts for each author
 def calculate_author_publication_counts(pubmed_results):
