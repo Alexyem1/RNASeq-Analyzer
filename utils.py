@@ -273,13 +273,18 @@ def process_data(df, x_axis, y_axis, cutoff, record_dict):
     # Filter for significant genes based on cutoff
     significant_genes = df[(abs(df['fold_change']) > cutoff) & (df[x_axis] + df[y_axis] > 10)]
 
+    if not df.empty:
+            df.loc[:, 'seq'] = df['GeneID'].apply(
+            lambda id: str(record_dict[id].seq) if id in record_dict else 'N/A'
+        )
+
     if not significant_genes.empty:
         significant_genes.loc[:, 'x_values'] = significant_genes[x_axis]
         significant_genes.loc[:, 'y_values'] = significant_genes[y_axis]
         significant_genes.loc[:, 'seq'] = significant_genes['GeneID'].apply(
             lambda id: str(record_dict[id].seq) if id in record_dict else 'N/A'
         )
-    return significant_genes
+    return significant_genes, df
 
 
 ############################################################################################################
@@ -703,7 +708,7 @@ def fetch_pubmed_abstracts(query, max_results=20):
 
     return abstracts
 
-#@st.cache_data
+#@st.cache_data(experimental_allow_widgets=True) 
 def display_results_in_aggrid(pubmed_results):
     # NCBI will contact user by email if excessive queries are detected
     email = ''
@@ -768,46 +773,6 @@ def display_results_in_aggrid(pubmed_results):
     if selected_rows:
         st.subheader("Selected Data:")
         for row in selected_rows:
-            #st.write(row)
-            # Check if a publication is selected
-            # if 'Paper ID' in row:
-            #     lookup = PubMedLookup(row["Paper ID"], email)
-            #     publication = Publication(lookup)    # Use 'resolve_doi=False' to keep DOI URL
-
-            #     soup = BeautifulSoup(publication.abstract, "html.parser")
-            #     plain_text = soup.get_text()
-            #     print(plain_text)
-            #     c = st.container(border=True)
-            #     c.write(
-            #         """
-            #         TITLE:\n{title}\n
-            #         AUTHORS:{authors}\n
-            #         JOURNAL:{journal}\n
-            #         YEAR:{year}\n
-            #         MONTH:{month}\n
-            #         DAY:{day}\n
-            #         URL:{url}\n
-            #         PUBMED:{pubmed}\n
-            #         CITATION:{citation}\n
-            #         MINICITATION:{mini_citation}\n
-            #         """
-            #         .format(**{
-            #             'title': publication.title,
-            #             'authors': publication.authors,
-            #             'journal': publication.journal,
-            #             'year': publication.year,
-            #             'month': publication.month,
-            #             'day': publication.day,
-            #             'url': publication.url,
-            #             'pubmed': publication.pubmed_url,
-            #             'citation': publication.cite(),
-            #             'mini_citation': publication.cite_mini()
-            #             #'abstract': repr(publication.abstract),
-            #         }))
-            #     st.write("Abstract: " + plain_text)
-
-
-
             if 'Paper ID' in row:
                 lookup = PubMedLookup(row["Paper ID"], email)
                 publication = Publication(lookup)  # Use 'resolve_doi=False' to keep DOI URL
@@ -855,10 +820,6 @@ def display_results_in_aggrid(pubmed_results):
                 with st.expander("**Abstract:**"):
                     st.write(plain_text)
 
-
-
-                #st.subheader("Abstract:")
-                #st.components.v1.html(f'<iframe src="{row["Paper URL"]}" width=800 height=600></iframe>', height=600)
 
 # Assuming you have 'fetch_pubmed_abstracts' and 'display_results_in_aggrid' functions defined
 

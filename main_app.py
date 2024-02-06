@@ -11,65 +11,36 @@
     # main: The main function to run the app, which orchestrates the flow and interactions.
 
 # Import necessary modules
-import warnings
 import streamlit as st
+import streamlit.components.v1 as components
+from streamlit_extras.stateful_button import button
+from streamlit_lottie import st_lottie
+from streamlit_plotly_events import plotly_events
+
 from utils import add_spacer, fetch_pubmed_abstracts, display_results_in_aggrid, calculate_journal_distribution, calculate_author_publication_counts,create_authors_network
 from utils import read_file, filter_dataframe, paginate_df, process_data, create_bokeh_plot, create_corrmap, fetch_literature, plot_to_bytes
-import tempfile
-from st_aggrid import AgGrid
-import pandas as pd
-from faker import Faker
-import random
-import io
-from stvis import pv_static
-import plotly.graph_objects as go
-import numpy as np
-from scipy.cluster import hierarchy as sch
-from scipy.spatial.distance import pdist
-#Literature search module, modified version of the code from https://github.com/nainiayoub/scholar-scrap:
-import requests
-import urllib
-from bs4 import BeautifulSoup
-import re
-import time
-from time import sleep
 from utils import get_paperinfo, get_tags, get_papertitle, get_citecount, get_link, get_author_year_publi_info, cite_number, convert_df, create_plotly_volcano_plot
 
-from pandas.api.types import (
-    is_categorical_dtype,
-    is_datetime64_any_dtype,
-    is_numeric_dtype,
-    is_object_dtype,
-)
+import pandas as pd
+import numpy as np
+
+from stvis import pv_static
+import requests
+from time import sleep
 import missingno as msno
 import matplotlib.pyplot as plt
 import plotly.express as px
-# ... other imports ...
-from streamlit_plotly_events import plotly_events
 from Bio import SeqIO
 import os
-from streamlit_extras.stateful_button import button
-from streamlit_lottie import st_lottie
-
-
-
-
-import streamlit as st
-import streamlit.components.v1 as components
-
 import jinja2
 import pdfkit
-import base64
-from io import BytesIO
-
-from PIL import Image
+#from PIL import Image
 from datetime import datetime
 import pytz
-# Import Bokeh export functions
-from bokeh.io.export import get_screenshot_as_png
 import json
-
+import warnings
 warnings.filterwarnings("ignore")
+
 # Define UI functions for each section of the app
     
 def show_file_upload():
@@ -134,59 +105,6 @@ def show_data_preprocessing():
             # extract meta-data from the uploaded dataset
             col1, col2, col3 = st.columns(3)
             with col1:
-                #st.header("Meta-data")
-                #st.markdown("#### Meta-Data")
-                #st.markdown("<h4 style='text-align: center'>Meta-Data</h4>", unsafe_allow_html=True)
-                #st.write(df.style.set_table_styles([{'selector': 'th', 'props': [('text-align', 'center')]}, {'selector': 'td', 'props': [('text-align', 'center')]}]), unsafe_allow_html=True)
-                #row_count = df.shape[0]
-                # column_count = df.shape[1]
-
-                # if "duplicate_row_count" not in st.session_state:
-                #     st.session_state["duplicate_row_count"] = None
-                # # Use the duplicated() function to identify duplicate rows
-                # duplicates = df[df.duplicated()]
-                # duplicate_row_count =  duplicates.shape[0]
-                # st.session_state["duplicate_row_count"] = duplicate_row_count
-
-                # if "missing_value_row_count" not in st.session_state:
-                #     st.session_state["missing_value_row_count"] = None
-                # missing_value_row_count = df[df.isna().any(axis=1)].shape[0]
-                # st.session_state["missing_value_row_count"] = missing_value_row_count
-            
-                #table_markdown = f"""
-                #| Description | Value | 
-                #|---|---|
-                #| Number of Rows | {row_count} |
-                #| Number of Columns | {column_count} |
-                #| Number of Duplicated Rows | {duplicate_row_count} |
-                #| Number of Rows with Missing Values | {st.session_state["missing_value_row_count"]} |
-                #"""
-                #st.markdown(table_markdown)
-
-
-                #add_spacer(2)
-                #st.markdown('##### Row duplicates and missing values handling: ')
-                #if duplicate_row_count != 0 and not st.session_state['uploaded_data'].empty:
-                #    if st.button("Remove duplicates"): 
-                #        df = st.session_state['uploaded_data']
-                #        df.drop_duplicates(keep='first', inplace=True)
-                #        st.session_state['uploaded_data'] = df
-                #         st.session_state["duplicate_row_count"] = df[df.duplicated()].shape[0]
-                #         st.success("Duplicates removed.")
-                    
-                # elif missing_value_row_count != 0 and not st.session_state['uploaded_data'].empty:
-                #     if st.button("Remove rows with missing values"): 
-                #         df = st.session_state['uploaded_data']
-                #         df.dropna(inplace=True)
-                #         st.session_state['uploaded_data'] = df
-                #         # Recalculate the number of rows with missing values
-                #         st.session_state["missing_value_row_count"] = df.isnull().sum().sum()
-                #         st.success("Rows with missing values removed.")
-                #         st.success("Data is ready for further processing and plotting.")
-                # else:
-                #     st.warning("No duplicates and rows with missing values available.")
-
-
                 def generate_table_data():
                     if 'uploaded_data' in st.session_state and not st.session_state['uploaded_data'].empty:
                         df = st.session_state['uploaded_data']
@@ -272,22 +190,6 @@ def show_data_preprocessing():
 
 
             with col2:
-                #st.header("Columns Type")
-                #st.markdown("#### Columns Type")
-                #st.markdown("<h4 style='text-align: center'>Columns Type</h4>", unsafe_allow_html=True)
-    
-                # get feature names
-                #columns = list(df.columns)
-                
-                # create dataframe
-                #column_info_table = pd.DataFrame({
-                #    "column": columns,
-                #    "data_type": df.dtypes.tolist()
-                #})
-                    
-                # display pandas dataframe as a table
-                #st.dataframe(column_info_table, hide_index=True)
-
                 st.markdown("<h4 style='text-align: center'>Columns Type</h4>", unsafe_allow_html=True)
                 # Create a DataFrame for Columns Type
                 columns_type_df = pd.DataFrame(df.dtypes, columns=['Data Type']).reset_index()
@@ -338,13 +240,6 @@ def show_data_preprocessing():
                 left, center, right = st.columns([1, 3.5, 1])
                 with center:
                     st.dataframe(info_df)
-
-                #info_df = pd.DataFrame(list(col_info.items()), columns=['Description', 'Value'])
-                # Convert DataFrame to HTML and use HTML to center the table
-                #st.markdown(info_df.to_html(index=False, classes='center-table'), unsafe_allow_html=True)
-                #st.markdown("<style> .center-table { margin-left: auto; margin-right: auto; } </style>", unsafe_allow_html=True)
-
-
 
 
             with col2:
@@ -424,10 +319,10 @@ def show_data_analysis():
     with tab1:
         st.subheader("Volcano Plot")
 
-        st.write("Upload your data (CSV or TSV format) to visualize the volcano plot.")
+        #st.write("Upload your data (CSV or TSV format) to visualize the volcano plot.")
 
         # File uploader that accepts both CSV and TSV files
-        uploaded_file = st.file_uploader("Choose a file", type=['csv', 'tsv'])
+        uploaded_file = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'], key="Volcano_Plot_Uploader")
 
         if uploaded_file is not None:
             file_type = uploaded_file.name.split('.')[-1]
@@ -471,10 +366,14 @@ def show_data_analysis():
                     st.dataframe(selected_data)
                 else:
                     st.write("No genes selected")
+        else:
+            st.write("Awaiting CSV/TSV file to be uploaded.")
 
 
         
     with tab2:
+        st.subheader("Scatter Plot")
+        #st.write("Upload your data (CSV or TSV format) to visualize the scatter plot.")
         #Pagination module
         #@st.cache_data(show_spinner=False) <-- not sure wether I should use it here
         def split_frame(input_df, rows):
@@ -484,19 +383,7 @@ def show_data_analysis():
         def paginate_filtered_data(dataset):
             top_menu = st.columns(3)
             with top_menu[0]:
-                #fig = go.Figure(go.Indicator(
-                #mode = "gauge+number",
-                #value = 270,
-                #domain = {'x': [0, 1], 'y': [0, 1]},
-                #title = {'text': "Speed"}
-                #))
-                #fig.update_layout(
-                #    width=200, height=400  # Added parameter
-                #    )
-                #st.plotly_chart(fig)
-                # Create three columns with equal space
                 st.metric(label="Gene count", value=len(filtered_data))
-                #st.write(f"{met}")
 
 
             with top_menu[1]:
@@ -512,7 +399,7 @@ def show_data_analysis():
 
             bottom_menu = st.columns((4, 1, 1))
             with bottom_menu[2]:
-                batch_size = st.selectbox("Page Size", options=[25, 50, 100],key="Volcano Plot")
+                batch_size = st.selectbox("Page Size", options=[25, 50, 100],key="Volcano_Plot")
             with bottom_menu[1]:
                 total_pages = (
                     int(len(dataset) / batch_size) if int(len(dataset) / batch_size) > 0 else 1
@@ -524,88 +411,95 @@ def show_data_analysis():
                 st.markdown(f"Page **{current_page}** of **{total_pages}** ")
 
             pages = split_frame(dataset, batch_size)
-            #pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
-            # Ensure current_page is within the valid range
-            #if 1 <= current_page <= len(pages):
-            #    pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
-            #else:
-                # Handle the case where current_page is out of range
-                # For example, display a message
-            #    st.warning("Nothing found!")
+
             try:
                 # Attempt to display the page. current_page is assumed to be defined.
                 pagination.dataframe(data=pages[current_page - 1], use_container_width=True)
             except IndexError:
                 # This block is executed if an IndexError occurs in the try block.
                 st.error("No data available to display.")
-                # You can choose to display an empty DataFrame, a message, or revert to a default page.
-                # For example, showing the first page as a fallback:
-                #if len(pages) > 0:
-                #    pagination.dataframe(data=pages[0], use_container_width=True)  # Show first page
-                #else:
-                #    st.write("No data available to display.")
-
 
 
         # Function to load and cache data
-        #@st.cache(allow_output_mutation=True)
         @st.cache_resource
-        def load_data(fasta_path, csv_path):
+        def load_data(fasta_path):
             record_dict = SeqIO.to_dict(SeqIO.parse(fasta_path, "fasta"))
-            df = pd.read_csv(csv_path, sep="\t", header=0)
-            return record_dict, df
+            return record_dict
 
         # Load data
         fasta_path = os.path.join("data", "protein_sequences.fasta")
-        csv_path = os.path.join("data", "input_data.tsv")
         # Upload widgets
-        record_dict, df = load_data(fasta_path, csv_path)
+        record_dict = load_data(fasta_path)
 
 
-        # Filter out the 'fold_change' column from the options
-        condition_columns = [col for col in df.columns[2:] if col != 'fold_change']
-        
-        # Sidebar Inputs
-        #x_axis = st.sidebar.selectbox('X-Axis: condition A', df.columns[2:], index=0)
-        #y_axis = st.sidebar.selectbox('Y-Axis: condition B', df.columns[2:], index=1)
-        col1, col2, col3, col4 = st.columns([0.25,0.25,0.25,0.25])
-        with col1:
-            x_axis = st.selectbox('Select condition for X-axis:', options=condition_columns,  key=("selx"))
-        with col2:
-            y_axis = st.selectbox('Select condition for Y-axis:', options=condition_columns,  key=("sely"))
-        with col3:
-            cut_off = st.slider('|fold change| > :', 0.0, 10.0, 2.0)
-        with col4:
-            gene_annotation = st.text_input("Gene annotation contains:")
+        # File uploader that accepts both CSV and TSV files
+        scatterplot_df = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'], key = "Scatter_Plot_Uploader")
 
-        # Process the data
-        significant_genes = process_data(df, x_axis, y_axis, cut_off, record_dict)
+        if scatterplot_df is not None:
+            file_type = scatterplot_df.name.split('.')[-1]
+            if file_type == 'csv':
+                sp_df = pd.read_csv(scatterplot_df)
+            elif file_type == 'tsv':
+                sp_df = pd.read_csv(scatterplot_df, sep='\t')
+            
+            if "sp_df" not in st.session_state:
+                st.session_state["sp_df"] = None
+            st.session_state["sp_df"] = sp_df
 
-        # Display the Bokeh plot
-        if not significant_genes.empty:
-            col1, col2 = st.columns([0.5,0.5])
+            sel_columns = sp_df.select_dtypes(include=[np.number]).columns
+            if "sp_sel_columns" not in st.session_state:
+                st.session_state["sp_sel_columns"] = None
 
-            with col1.container(border=None):
-                plot = create_bokeh_plot(df,significant_genes, x_axis, y_axis, gene_annotation)
-                st.session_state["scatter_plot"] = plot
-                
-                st.bokeh_chart(plot, use_container_width=True)
+            st.session_state["sp_sel_columns"] = sel_columns
 
-            with col2.container(border=None):
-                # Filter data based on gene annotation input
-                filtered_data = significant_genes[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False)]
 
-                # Display the filtered data using Ag-Grid
-                # Enhanced display using HTML
-                st.markdown("<h4 style='color: navy; text-align: center;'>List of filtered genes:</h4>", unsafe_allow_html=True)
-                paginate_filtered_data(filtered_data)
-                #AgGrid(filtered_data)
+            # Filter out the 'fold_change' column from the options
+            #condition_columns = [col for col in df.columns[2:] if col != 'fold_change']
+            
+            # Sidebar Inputs
+            #x_axis = st.sidebar.selectbox('X-Axis: condition A', df.columns[2:], index=0)
+            #y_axis = st.sidebar.selectbox('Y-Axis: condition B', df.columns[2:], index=1)
+            col1, col2, col3, col4 = st.columns([0.25,0.25,0.25,0.25])
+            with col1:
+                x_axis = st.selectbox('Select condition for X-axis:', options=st.session_state.sp_sel_columns,  key=("selx"))
+            with col2:
+                y_axis = st.selectbox('Select condition for Y-axis:', options=st.session_state.sp_sel_columns,  key=("sely"))
+            with col3:
+                cut_off = st.slider('|fold change| > :', 0.0, 10.0, 2.0)
+            with col4:
+                gene_annotation = st.text_input("Gene annotation contains:")
+
+            # Process the data
+            significant_genes, df_processed = process_data(st.session_state.sp_df, x_axis, y_axis, cut_off, record_dict)
+
+            # Display the Bokeh plot
+            if not significant_genes.empty:
+                col1, col2 = st.columns([0.5,0.5])
+
+                with col1.container(border=None):
+                    plot = create_bokeh_plot(df_processed,significant_genes, x_axis, y_axis, gene_annotation)
+                    st.session_state["scatter_plot"] = plot
+                    
+                    st.bokeh_chart(plot, use_container_width=True)
+
+                with col2.container(border=None):
+                    # Filter data based on gene annotation input
+                    filtered_data = significant_genes[significant_genes['Annotation'].str.contains(gene_annotation, case=False, na=False)]
+
+                    # Display the filtered data using Ag-Grid
+                    # Enhanced display using HTML
+                    st.markdown("<h4 style='color: navy; text-align: center;'>List of filtered genes:</h4>", unsafe_allow_html=True)
+                    paginate_filtered_data(filtered_data)
+                    #AgGrid(filtered_data)
+            else:
+                st.warning("No data to display.")
         else:
-            st.warning("No data to display.")
+            st.write("Awaiting CSV/TSV file to be uploaded.")
 
     with tab3:
+        st.subheader("Clustergram")
         # Upload CSV/TSV file widget
-        uploaded_file = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'])
+        uploaded_file = st.file_uploader("Upload your CSV/TSV file", type=['csv', 'tsv'], key="Clustergram_Uploader")
 
         if uploaded_file is not None:
             try:
@@ -680,9 +574,6 @@ def show_literature_search():
 
 
 def show_googlescholar_results(default_search_term):
-    # Code from the provided script
-    # Include the functionality for literature search here
-    # Modify the code as necessary to fit into the function
 
     #st.subheader("Literature Search")
     st.markdown("""
@@ -819,8 +710,6 @@ def show_googlescholar_results(default_search_term):
                 with st.expander("Percentage of publication sites", expanded=True):
                     st.plotly_chart(fig2, theme="streamlit", use_container_width=True)
 
-    # Make sure to return any data or results that need to be displayed or used elsewhere
-
 
 def show_europepmc_results():
 
@@ -887,14 +776,6 @@ def show_pubmed_results():
             # Render the Plotly figure
             st.plotly_chart(fig)
 
-        # with tab3:
-        #     # Authors Network
-        #     if st.session_state.pubmed_results:
-        #         #st.subheader("Authors Network")
-        #         authors_network = create_authors_network(st.session_state.pubmed_results)
-        #         if authors_network:
-        #             pv_static(authors_network)
-
         with tab3:
             # Authors Network
             # Add a checkbox to enable/disable network calculation
@@ -940,22 +821,7 @@ def show_pubmed_results():
                 st.plotly_chart(fig)
 
 
-
-
-
-
-
-
 def generate_report_ui():
-
-    #processed_data = None
-    
-    #"""Displays the UI elements for report generation."""
-    #st.subheader("Report Generation")
-    #st.markdown("Generate a report of your analysis.")
-    #if st.button("Generate Report"):
-    #    # Placeholder for report generation logic
-    #    st.write("Report generation functionality to be implemented.")
 
     st.header("Report Generation")
     # Get time
@@ -1022,15 +888,8 @@ def generate_report_ui():
     pdf_out = pdfkit.from_string(outputText, False, configuration=config)
     st.download_button("Download RNASeq Analyzer report as PDF here", data=pdf_out, file_name="RNASEQ_Analyzer_report.pdf", mime='application/octet-stream')
 
-
     
 def feedback_ui():
-    #"""Displays the UI elements for user feedback."""
-    #st.subheader("Feedback")
-    #feedback = st.text_area("Please provide your feedback about the app:")
-    #if st.button("Submit Feedback"):
-        # Placeholder for feedback handling logic
-    #    st.success("Thank you for your feedback!")
     a, b = st.columns([0.9, 1.4], gap='large')
     a.image('IGI_Berkeley.jpg')
     a.markdown("""<span style="font-size:20px;">Innovative Genomics Institute (IGI) | Arkin Lab </span>""", unsafe_allow_html=True)
@@ -1041,72 +900,6 @@ def feedback_ui():
 
 
 # main_app.py (Main function implementation)
-def main_deprecated():
-
-
-    #set background
-    #add_bg_from_local('image.png')
-
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
-
-    sections = ["Data Upload", "Data Preprocessing", "Data analysis", "Literature Search", "Report Generation", "Feedback"]
-    
-    selected_section = st.sidebar.radio("Go to", sections, key='nav')
-
-
-    # Display the appropriate section
-    if selected_section == "Data Upload":
-        #Web App Title
-        st.markdown('''
-        # **RNA-Seq Analyzer**
-
-        This is the **RNA-Seq EDA App** created using `Python` + `Streamlit`.
-
-        ---
-        ''')
-    #**Credit:** App built by [Alexander Yemelin](https://www.linkedin.com/in/alexander-yemelin/)
-        show_file_upload()
-    elif selected_section == "Data Preprocessing":
-        show_data_preprocessing()
-    elif selected_section == "Data analysis":
-        show_data_analysis()
-    elif selected_section == "Literature Search":
-        #with st_lottie_spinner(lottie_json,height=400, width=400, key="literature"):
-        #    time.sleep(1)
-        show_literature_search()
-    elif selected_section == "Report Generation":
-        generate_report_ui()
-    elif selected_section == "Feedback":
-        feedback_ui()
-
-
-#################################################### SESSION STATE MANAGEMENT ######################################################
-#from streamlit import session_state as _state
-
-#_PERSIST_STATE_KEY = f"{__name__}_PERSIST"
-
-
-#def persist(key: str) -> str:
-#    """Mark widget state as persistent."""
-#    if _PERSIST_STATE_KEY not in _state:
-#        _state[_PERSIST_STATE_KEY] = set()
-#
-#    _state[_PERSIST_STATE_KEY].add(key)
-#
-#    return key
-
-
-# def load_widget_state():
-#     """Load persistent widget state."""
-#     if _PERSIST_STATE_KEY in _state:
-#         print("DAS FUNKTIONIERT!!!!!!!!!!!!")
-#         _state.update({
-#             key: value
-#             for key, value in _state.items()
-#             if key in _state[_PERSIST_STATE_KEY]
-#         })
-
 def main():
 
     page = st.sidebar.radio("Go to: ", tuple(PAGES.keys()), format_func=str.capitalize)
@@ -1117,13 +910,8 @@ PAGES = {
     "Data Upload": show_file_upload,
     "Data Preprocessing": show_data_preprocessing,
     "Data analysis": show_data_analysis,
-    #"Literature Search": show_literature_search,
-    #"Report Generation": generate_report_ui,
     "Feedback": feedback_ui,
 }
-
-
-    
 
 if __name__ == "__main__":
     #im = Image.open("favicon.ico")
@@ -1132,25 +920,16 @@ if __name__ == "__main__":
         layout="wide",
         #im = Image.open("favicon.ico"), page_icon=":chart_with_upwards_trend:",
     )
-#################################################### STATE MANAGEMENT ######################################################
-    # Load persisted widget state
-    #load_widget_state()
+
 
     
     with st.spinner('Calculating...'):
-    #with st_lottie_spinner(lottie_json,height=400, width=400):
-        #time.sleep(1)
         st.title("Streamlit RNA-Seq Analyzer")
         main()
-        #st.balloons()
-    #from streamlit_lottie import st_lottie
-    #st_lottie("https://assets5.lottiefiles.com/packages/lf20_V9t630.json", key="hello")
 
 
 
     with st.sidebar:
-        #from streamlit_lottie import st_lottie
-        #st_lottie("https://assets5.lottiefiles.com/packages/lf20_V9t630.json", key="hello")
         with open("./accessory_files/animation.json", "r",errors='ignore') as f:
             animation = json.load(f)
         st_lottie(animation)
