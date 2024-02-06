@@ -760,7 +760,8 @@ def show_pubmed_results():
 
             # Create an interactive pie chart using Plotly Express
             fig = px.pie(
-                journal_distribution_df,
+                #journal_distribution_df,
+                journal_distribution_df.nlargest(10, 'Count'),
                 names="Journal",
                 values="Count",
                 title="Journal Distribution",

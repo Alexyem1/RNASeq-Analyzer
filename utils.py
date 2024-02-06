@@ -459,10 +459,27 @@ def create_corrmap_deprecated(df, cols, colorscale):
     return fig
 
 
-
 ###################################################################################################################################
 # Literature Handling Functions:These functions deal with processing and retrieving literature data, which is a backend operation.#
 ###################################################################################################################################
+import re  # Import regular expressions module
+
+# Function to remove HTML tags from a string
+def remove_html_tags_deprecated(text):
+    clean = re.compile('<.*?>')  # Regular expression for HTML tags
+    return re.sub(clean, '', text)
+
+def remove_html_tags(text):
+    soup = BeautifulSoup(text, "html.parser")
+    return soup.get_text()
+
+def fix_malformed_tags(text):
+    # Correct opening tags
+    corrected_text = re.sub(r"i>([^<]+?)<", r"<i>\1</", text)
+    # Correct closing tags
+    corrected_text = re.sub(r"/i>", r"</i>", corrected_text)
+    return corrected_text
+
 @st.cache_data
 def fetch_literature(gene_name):
     url = f"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query={gene_name}&format=json&resultType=core"
@@ -481,16 +498,20 @@ def fetch_literature(gene_name):
         tokenizer = T5Tokenizer.from_pretrained(model_name)
         model = T5ForConditionalGeneration.from_pretrained(model_name)
 
-        for i, article in enumerate(articles[:3]):  # Limit to first 3 articles
+        for i, article in enumerate(articles[:5]):  # Limit to first 3 articles
             #print(article.get('pmcid'))
-            progress_bar.progress((i+1)/3)
-            status_text.text(f"Processing article {i+1}/3")
+            progress_bar.progress((i+1)/5)
+            status_text.text(f"Processing article {i+1}/5")
 
             try:
+                article_title = article.get('title', 'No Title')
+                # Remove HTML tags from the title
+                article_title_no_html = remove_html_tags(article_title)
                 article_ID = article.get('pmcid')
                 #print(article_ID)
                 #full_text = get_full_text(article_ID)
                 full_text = article.get("abstractText")
+                full_text = remove_html_tags(full_text)
                 #print(full_text)
                 if full_text:
                     # Ensure the gene name is included in the summary
@@ -498,13 +519,15 @@ def fetch_literature(gene_name):
                     relevant_text = " ".join(relevant_sentences)
                     # Summarize the filtered text
                     inputs = tokenizer.encode("summarize: " + relevant_text, return_tensors="pt", max_length=512, truncation=True)
-                    summary_ids = model.generate(inputs, max_length=150, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
+                    summary_ids = model.generate(inputs, max_length=200, min_length=40, length_penalty=2.0, num_beams=4, early_stopping=True)
                     summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-                    summaries.append((article.get('title', 'No Title'), summary))
+                    #summaries.append((article_title_no_html, summary))
+                    summaries.append((f"**{article_title_no_html}**", summary))
+
                 else:
-                    summaries.append((article.get('title', 'No Title'), "Full text not available."))
+                    summaries.append((article_title_no_html, "Full text not available."))
             except Exception as e:
-                summaries.append((article.get('title', 'No Title'), f"Error processing full text: {e}"))
+                summaries.append((article_title_no_html, f"Error processing full text: {e}"))
 
         progress_bar.empty()
         status_text.empty()
