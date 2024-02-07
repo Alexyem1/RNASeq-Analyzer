@@ -1,5 +1,5 @@
 # Streamlit RNA-Seq Analyzer App
-(Streamlit web app for RNASeq data analysis)
+(Streamlit web app for RNA-Seq data analysis)
 
 ## Description
 "Introducing the RNA-Seq Analyzer: A Streamlit-Enhanced Tool for RNA-Seq Data Analysis"
@@ -12,7 +12,7 @@ Access the tool directly via https://github.com/Alexyem1/RNASeq-Analyzer/archive
 - **Data Upload**: Upload CSV or TSV files for analysis, containing FPKM values or fold change and p-values.
 - **Data Preprocessing**: Filter and examine specific columns in your dataset, remove missing values and duplicates, and perform descriptive statistics analysis
 - **Data Analysis**: Create interactive volcano plot, scatter plot, clustergram and perform scientific literature search through data fetching from publicly accessible databases, including PubMed, Europe PMC, and Google Scholar.
-- **Report Generation**: Automatic report generating feature summarizes created plots in their current states in a separated report that can be exported and downloaded as .pdf fi le.
+- **Report Generation**: Automatic report generating feature summarizes created plots in their current states in a separated report that can be exported and downloaded as .pdf file.
 
 ## How to Use
 
@@ -21,8 +21,7 @@ Access the tool directly via https://github.com/Alexyem1/RNASeq-Analyzer/archive
 3. **Data Visualization**: Select from various plot types for data visualization.
 4. **Report Generation**: After analysis, users can download the output plots in a collective manner. The result is a customized data report showcasing the outcomes of the data analysis based on selected plots. This report is automatically generated once the user start data analysis by analyzing different plots and automatically updated with every change of the corresponding plots.
 
-# Local Installation (Optional)
-# Reproducing this web app
+# Local Installation - Reproducing this web app
 To recreate this web app on your own computer, do the following.
 
 ### Create conda environment
