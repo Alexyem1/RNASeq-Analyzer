@@ -60,10 +60,4 @@ streamlit run main_app.py
 
 ---
 
-Contributions
 Contributions to improve the app are welcome! Feel free to fork the repository and submit a pull request.
-
-
----
-
-This README is designed to be directly uploaded to a GitHub repository. It includes a brief description of the app, its features, usage instructions, local installation steps (if required), a section for contributions, and a note on licensing.
