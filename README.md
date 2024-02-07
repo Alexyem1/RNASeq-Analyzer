@@ -7,6 +7,8 @@ The RNA-Seq Analyzer revolutionizes the exploration of RNA-Seq data through a us
 
 Access the tool directly via https://github.com/Alexyem1/RNASeq-Analyzer/archive/refs/heads/main.zip and embark on a seamless analytical journey, leveraging the RNA-Seq Analyzer's capabilities to unlock valuable insights from your data. Designed to enhance accessibility and efficiency in RNA-Seq data analysis, this tool is a valuable asset for the scientific and research community.
 
+<div style="text-align:center"><img src ="https://github.com/Alexyem1/RNASeq-Analyzer/blob/main/workflow.png" /></div>
+
 ## Features
 
 - **Data Upload**: Upload CSV or TSV files for analysis, containing FPKM values or fold change and p-values.
