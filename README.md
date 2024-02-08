@@ -7,8 +7,7 @@
 >— Hal R. Varian
 
 ## Description
-"Introducing the RNA-Seq Analyzer: A Streamlit-powered web app for RNA-Seq Data Analysis"
-The RNA-Seq Analyzer facilitates the exploration of RNA-Seq data through a user-friendly, web-based platform. Developed with Streamlit, it simplifies the exploratory data analysis process, enabling users to upload, filter, visualize, and analyze their RNA-Seq datasets with ease. Compatible with both CSV and TSV formats, this tool is tailored to meet the needs of molecular biologists.
+Introducing the RNA-Seq Analyzer: A Streamlit-powered Web App for RNA-Seq Data Analysis. The RNA-Seq Analyzer offers a user-friendly, web-based platform designed to simplify the exploration of RNA-Seq data. Developed using Streamlit, this tool streamlines the exploratory data analysis process, allowing users to easily upload, filter, visualize, and analyze their RNA-Seq datasets. Supporting both CSV and TSV formats, the RNA-Seq Analyzer is specifically tailored to meet the needs of molecular biologists.
 
 Access the tool directly via https://github.com/Alexyem1/RNASeq-Analyzer/archive/refs/heads/main.zip and embark on a seamless analytical journey, leveraging the RNA-Seq Analyzer's capabilities to unlock valuable insights from your data. Designed to enhance accessibility and efficiency in RNA-Seq data analysis, this tool is a valuable asset for the scientific and research community.
 
