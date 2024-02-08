@@ -1,8 +1,8 @@
 # Streamlit RNA-Seq Analyzer App
 (Streamlit web app for RNA-Seq data analysis)
 
->The ability to take data — to be able to understand it, to process it, to extract value
->from it, to visualize it, to communicate it — that’s going to be a hugely important
+>The ability to take data - to be able to understand it, to process it, to extract value
+>from it, to visualize it, to communicate it - that’s going to be a hugely important
 >skill in the next decades.
 >— Hal R. Varian
 
